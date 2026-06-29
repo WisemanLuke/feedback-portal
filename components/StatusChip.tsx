@@ -1,12 +1,12 @@
 import type { Status } from '@/lib/types';
 
 const STYLES: Record<Status, string> = {
-  new:          'bg-gray-100 text-gray-600',
-  under_review: 'bg-blue-100 text-blue-700',
-  planned:      'bg-purple-100 text-purple-700',
-  in_progress:  'bg-orange-100 text-orange-700',
-  completed:    'bg-green-100 text-green-700',
-  declined:     'bg-red-100 text-red-600',
+  new:          'bg-border text-grey-700',
+  under_review: 'bg-blue-50 text-blue-700',
+  planned:      'bg-purple-50 text-purple-700',
+  in_progress:  'bg-orange-50 text-orange-700',
+  completed:    'bg-green-50 text-green-700',
+  declined:     'bg-red-50 text-red-600',
 };
 
 const LABELS: Record<Status, string> = {

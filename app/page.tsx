@@ -1,8 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import Image from 'next/image';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import FeedbackCard from '@/components/FeedbackCard';
+import SkeletonCard from '@/components/SkeletonCard';
 import SubmitModal from '@/components/SubmitModal';
+import ToastContainer, { toast } from '@/components/Toast';
 import { supabase } from '@/lib/supabase';
 import type { Category, FeedbackPost, SortOrder, Status } from '@/lib/types';
 
@@ -26,46 +30,41 @@ const CATEGORY_OPTIONS: { value: Category | ''; label: string }[] = [
 ];
 
 const STATUS_OPTIONS: { value: Status | ''; label: string }[] = [
-  { value: '',            label: 'All statuses' },
-  { value: 'new',         label: 'New' },
+  { value: '',             label: 'All statuses' },
+  { value: 'new',          label: 'New' },
   { value: 'under_review', label: 'Under Review' },
-  { value: 'planned',     label: 'Planned' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'completed',   label: 'Completed' },
-  { value: 'declined',    label: 'Declined' },
+  { value: 'planned',      label: 'Planned' },
+  { value: 'in_progress',  label: 'In Progress' },
+  { value: 'completed',    label: 'Completed' },
+  { value: 'declined',     label: 'Declined' },
 ];
 
-export default function Home() {
-  const [posts, setPosts]           = useState<FeedbackPost[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [sort, setSort]             = useState<SortOrder>('top');
-  const [category, setCategory]     = useState<Category | ''>('');
-  const [status, setStatus]         = useState<Status | ''>('');
-  const [modalOpen, setModalOpen]   = useState(false);
-  const [voterId, setVoterId]       = useState('');
+function HomeContent() {
+  const searchParams  = useSearchParams();
+  const isAdmin       = searchParams.get('admin') === '1';
 
-  useEffect(() => {
-    setVoterId(getVoterId());
-  }, []);
+  const [posts, setPosts]         = useState<FeedbackPost[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [sort, setSort]           = useState<SortOrder>('top');
+  const [category, setCategory]   = useState<Category | ''>('');
+  const [status, setStatus]       = useState<Status | ''>('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [voterId, setVoterId]     = useState('');
+
+  useEffect(() => { setVoterId(getVoterId()); }, []);
 
   const fetchPosts = useCallback(async () => {
     setLoading(true);
 
-    let query = supabase
-      .from('feedback_posts')
-      .select('*');
-
+    let query = supabase.from('feedback_posts').select('*');
     if (category) query = query.eq('category', category);
     if (status)   query = query.eq('status', status);
+    query = sort === 'top'
+      ? query.order('vote_score', { ascending: false }).order('created_at', { ascending: false })
+      : query.order('created_at', { ascending: false });
 
-    if (sort === 'top') {
-      query = query.order('vote_score', { ascending: false }).order('created_at', { ascending: false });
-    } else {
-      query = query.order('created_at', { ascending: false });
-    }
-
-    const { data: postData } = await query;
-    if (!postData) { setLoading(false); return; }
+    const { data: postData, error } = await query;
+    if (error || !postData) { setLoading(false); return; }
 
     if (voterId) {
       const { data: voteData } = await supabase
@@ -77,7 +76,6 @@ export default function Home() {
       const voteMap = Object.fromEntries(
         (voteData ?? []).map((v) => [v.feedback_post_id, v.value as 1 | -1])
       );
-
       setPosts(postData.map((p) => ({ ...p, viewer_vote: voteMap[p.id] ?? null })));
     } else {
       setPosts(postData.map((p) => ({ ...p, viewer_vote: null })));
@@ -86,13 +84,10 @@ export default function Home() {
     setLoading(false);
   }, [sort, category, status, voterId]);
 
-  useEffect(() => {
-    if (voterId) fetchPosts();
-  }, [fetchPosts, voterId]);
+  useEffect(() => { if (voterId) fetchPosts(); }, [fetchPosts, voterId]);
 
   const handleVote = async (postId: string, value: 1 | -1) => {
     if (!voterId) return;
-
     const existing = posts.find((p) => p.id === postId)?.viewer_vote;
 
     if (existing === value) {
@@ -108,35 +103,58 @@ export default function Home() {
     fetchPosts();
   };
 
+  const handleStatusChange = async (postId: string, newStatus: Status) => {
+    await supabase.from('feedback_posts').update({ status: newStatus }).eq('id', postId);
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, status: newStatus } : p));
+    toast('Status updated');
+  };
+
   const handleSubmit = async (title: string, body: string, cat: Category, authorName: string) => {
-    await supabase.from('feedback_posts').insert({ title, body, category: cat, author_name: authorName });
+    const { error } = await supabase.from('feedback_posts')
+      .insert({ title, body, category: cat, author_name: authorName });
+    if (error) { toast('Something went wrong — please try again', 'error'); return; }
     setModalOpen(false);
+    toast('Feedback submitted — thank you!');
     fetchPosts();
   };
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Feedback Portal</h1>
-            <p className="text-gray-500 mt-1 text-sm">Share ideas and vote on what matters most</p>
-          </div>
+    <>
+      {/* Header */}
+      <header className="bg-white border-b border-border sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+          <Image src="/pd-logo.svg" alt="PlayerData" width={132} height={30} priority />
           <button
             onClick={() => setModalOpen(true)}
-            className="bg-brand text-gray-900 font-semibold px-4 py-2 rounded-lg text-sm hover:opacity-90 shrink-0"
+            className="bg-brand text-grey-900 font-semibold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity"
           >
-            + Submit
+            + Submit Feedback
           </button>
         </div>
+      </header>
 
-        <div className="flex flex-wrap gap-2 mb-6">
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        {/* Page title */}
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-grey-900">Feedback Portal</h1>
+          <p className="text-sm text-grey-300 mt-0.5">Vote on what matters most, share new ideas</p>
+          {isAdmin && (
+            <span className="inline-block mt-2 text-xs bg-brand/15 text-grey-900 font-medium px-2 py-0.5 rounded">
+              Admin mode — you can update statuses
+            </span>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          <div className="flex rounded-lg border border-border overflow-hidden text-sm">
             {(['top', 'newest'] as SortOrder[]).map((s) => (
               <button
                 key={s}
                 onClick={() => setSort(s)}
-                className={`px-3 py-1.5 ${sort === s ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  sort === s ? 'bg-grey-900 text-white' : 'bg-white text-grey-700 hover:bg-bg'
+                }`}
               >
                 {s === 'top' ? 'Top' : 'Newest'}
               </button>
@@ -145,24 +163,27 @@ export default function Home() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as Category | '')}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 bg-white"
+            className="border border-border rounded-lg px-3 py-1.5 text-sm text-grey-700 bg-white focus:outline-none focus:ring-1 focus:ring-brand"
           >
             {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as Status | '')}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 bg-white"
+            className="border border-border rounded-lg px-3 py-1.5 text-sm text-grey-700 bg-white focus:outline-none focus:ring-1 focus:ring-brand"
           >
             {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
 
+        {/* List */}
         {loading ? (
-          <div className="flex justify-center py-16 text-gray-400">Loading…</div>
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
+          </div>
         ) : posts.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            No feedback yet — be the first to share yours!
+          <div className="text-center py-20">
+            <p className="text-grey-300 text-sm">No feedback yet — be the first to share yours!</p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -172,15 +193,24 @@ export default function Home() {
                 post={post}
                 onVote={handleVote}
                 votingDisabled={!voterId}
+                isAdmin={isAdmin}
+                onStatusChange={handleStatusChange}
               />
             ))}
           </div>
         )}
-      </div>
+      </main>
 
-      {modalOpen && (
-        <SubmitModal onClose={() => setModalOpen(false)} onSubmit={handleSubmit} />
-      )}
-    </main>
+      {modalOpen && <SubmitModal onClose={() => setModalOpen(false)} onSubmit={handleSubmit} />}
+      <ToastContainer />
+    </>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
   );
 }
