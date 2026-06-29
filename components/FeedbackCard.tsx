@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { FeedbackPost, Status } from '@/lib/types';
 import StatusChip from './StatusChip';
 import VoteButtons from './VoteButtons';
@@ -23,9 +24,11 @@ interface Props {
   votingDisabled: boolean;
   isAdmin: boolean;
   onStatusChange: (postId: string, status: Status) => void;
+  onDelete: (postId: string) => void;
 }
 
-export default function FeedbackCard({ post, onVote, votingDisabled, isAdmin, onStatusChange }: Props) {
+export default function FeedbackCard({ post, onVote, votingDisabled, isAdmin, onStatusChange, onDelete }: Props) {
+  const [confirming, setConfirming] = useState(false);
   const body = post.body.length > 220 ? `${post.body.slice(0, 220)}…` : post.body;
 
   return (
@@ -37,7 +40,38 @@ export default function FeedbackCard({ post, onVote, votingDisabled, isAdmin, on
         disabled={votingDisabled}
       />
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-grey-900 leading-snug">{post.title}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="font-semibold text-grey-900 leading-snug">{post.title}</p>
+          {isAdmin && (
+            confirming ? (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs text-grey-700">Delete?</span>
+                <button
+                  onClick={() => onDelete(post.id)}
+                  className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirming(false)}
+                  className="text-xs font-medium text-grey-300 hover:text-grey-700 transition-colors"
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirming(true)}
+                className="shrink-0 text-grey-300 hover:text-red-500 transition-colors"
+                aria-label="Delete post"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M1 3h12M5 3V2h4v1M2 3l1 9h8l1-9" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            )
+          )}
+        </div>
         <p className="text-sm text-grey-700 mt-1 leading-relaxed">{body}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3">
           {isAdmin ? (

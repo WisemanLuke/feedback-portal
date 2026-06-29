@@ -41,7 +41,8 @@ const STATUS_OPTIONS: { value: Status | ''; label: string }[] = [
 
 function HomeContent() {
   const searchParams  = useSearchParams();
-  const isAdmin       = searchParams.get('admin') === '1';
+  const adminToken    = process.env.NEXT_PUBLIC_ADMIN_TOKEN;
+  const isAdmin       = !!adminToken && searchParams.get('admin') === adminToken;
 
   const [posts, setPosts]         = useState<FeedbackPost[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -101,6 +102,12 @@ function HomeContent() {
     }
 
     fetchPosts();
+  };
+
+  const handleDelete = async (postId: string) => {
+    await supabase.from('feedback_posts').delete().eq('id', postId);
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    toast('Post deleted');
   };
 
   const handleStatusChange = async (postId: string, newStatus: Status) => {
@@ -195,6 +202,7 @@ function HomeContent() {
                 votingDisabled={!voterId}
                 isAdmin={isAdmin}
                 onStatusChange={handleStatusChange}
+                onDelete={handleDelete}
               />
             ))}
           </div>
